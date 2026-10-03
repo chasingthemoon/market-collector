@@ -1,0 +1,70 @@
+name: collect
+
+# Opens the pages the chasingthemoon platform hands out (Booking.com and
+# Airbnb) in Chrome, slowly, and sends back what they show. The platform
+# Worker starts this every hour from 06:00 to 18:00 Costa Rica time
+# (workflow_dispatch, task: collect); GitHub's own schedule below is only a
+# fallback. Each run reads for at most 15 minutes, so the day's pages are
+# spread over the day. Free: this repository is public.
+#
+# Needs the secret MD_API_KEY (= the platform's MARKET_COLLECTOR_KEY).
+# Optional: secret MD_PROXIES; variables MD_URL, MD_IDENTITY, MD_CONTACT.
+
+on:
+  schedule:
+    - cron: '41 13,19,23 * * *'
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'collect = a real run · dry-run = open the pages in dry-run-pages.json and print, send nothing · airbnb-probe = test reading Airbnb, send nothing'
+        type: choice
+        options: [dry-run, collect, airbnb-probe]
+        default: dry-run
+      pages:
+        description: 'Pages to ask for at a time'
+        default: '10'
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - name: Collect
+        if: ${{ github.event_name == 'schedule' || inputs.task != 'airbnb-probe' }}
+        env:
+          MD_URL: ${{ vars.MD_URL }}
+          MD_CONTACT: ${{ vars.MD_CONTACT }}
+          MD_IDENTITY: ${{ vars.MD_IDENTITY }}
+          MD_API_KEY: ${{ secrets.MD_API_KEY }}
+          MD_PROXIES: ${{ secrets.MD_PROXIES }}
+          MD_DRY_RUN: ${{ inputs.task == 'dry-run' && '1' || '' }}
+          MD_MAX_PAGES: ${{ inputs.pages || '10' }}
+          MD_MAX_MINUTES: '15'
+          MD_DEBUG_DIR: ${{ github.workspace }}/collector-debug
+        run: node scrape.js
+      - name: Airbnb probe
+        if: ${{ inputs.task == 'airbnb-probe' }}
+        env:
+          MD_DEBUG_DIR: ${{ github.workspace }}/collector-debug
+        run: node airbnb-probe.js
+      - name: Keep pages that couldn't be read
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collector-debug
+          path: ${{ github.workspace }}/collector-debug
+          if-no-files-found: ignore
+          retention-days: 3
