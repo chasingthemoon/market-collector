@@ -4,7 +4,7 @@
 // Opens an Airbnb search (Uvita by default), takes a few listings, opens each
 // for a stay two weeks ahead (2 nights, 2 guests) the way a visitor would,
 // and prints what Airbnb's own page loaded:
-//   - the availability calendar (Airbnb's PdpAvailabilityCalendar call, or the
+//   - the availability calendar (Airbnb's PdpAvailabilityCalendar… call, or the
 //     same data in the page): how many nights are free, the minimum stay;
 //   - the price for the stay (the booking box: nightly price, fees, total).
 // Pages it couldn't read are saved (HTML + screenshot) to MD_DEBUG_DIR.
@@ -124,10 +124,10 @@ async function main() {
         if (!u.includes('/api/v3/')) return;
         const op = new URL(u).searchParams.get('operationName') || u.split('/api/v3/')[1].split(/[/?]/)[0];
         calls.push(`${op}:${r.status()}`);
-        if (op === 'PdpAvailabilityCalendar' || op === 'StaysPdpSections' || op === 'StaysPdpBookItQuery') {
+        if (/^PdpAvailabilityCalendar/.test(op) || op === 'StaysPdpSections' || op === 'StaysPdpBookItQuery') {
           try {
             const j = await r.json();
-            if (op === 'PdpAvailabilityCalendar') calendar = calendar || findKey(j, 'calendarMonths')[0];
+            if (/^PdpAvailabilityCalendar/.test(op)) calendar = calendar || findKey(j, 'calendarMonths')[0];
             else price = price || summarizePrice(j);
           } catch { /* not JSON */ }
         }
