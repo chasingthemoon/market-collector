@@ -238,13 +238,16 @@ async function saveDebug(page, label, why) {
 //
 // An Airbnb listing is one place: its "room" is the whole listing. Opening it
 // for the stay, Airbnb's own page asks Airbnb for two things we keep:
-//   PdpAvailabilityCalendar  a year of nights: free or not, minimum stay
-//   StaysPdpSections         the booking box: "$385 for 2 nights", and
-//                            "2 nights x $192.30" (fees included)
+//   PdpAvailabilityCalendar…  a year of nights: free or not, minimum stay
+//                             (PdpAvailabilityCalendarV2Query since
+//                             October 2026, so matched by name prefix)
+//   StaysPdpSections          the booking box: "$385 for 2 nights", and
+//                             "2 nights x $192.30" (fees included)
 // Both come back as the page's own network calls; the same data is sometimes
 // in the page itself (JSON in script tags), read as a fallback.
 
 const AIRBNB_ROOM = 'Whole listing'; // the room type an Airbnb comparable follows
+let calendarWarned = false; // the missing-calendar warning, once a run
 const isAirbnb = (url) => /^https:\/\/www\.airbnb\.[a-z.]+\/rooms\//i.test(url);
 
 function findKey(value, name, out = [], depth = 0) {
@@ -295,14 +298,17 @@ async function openAirbnb(page, task) {
   const u = new URL(task.url);
   const nights = Math.max(1, Math.round((Date.parse(u.searchParams.get('check_out')) - Date.parse(u.searchParams.get('check_in'))) / 86_400_000) || 1);
   let months = null, total = null, sawSections = false;
+  const ops = new Set(); // every Airbnb call the page made, for the log when nothing was read
   page.on('response', async (r) => {
     const url = r.url();
     if (!url.includes('/api/v3/')) return;
     const op = new URL(url).searchParams.get('operationName') || url.split('/api/v3/')[1].split(/[/?]/)[0];
-    if (op !== 'PdpAvailabilityCalendar' && op !== 'StaysPdpSections') return;
+    ops.add(op);
+    const calendarOp = /^PdpAvailabilityCalendar/.test(op);
+    if (!calendarOp && op !== 'StaysPdpSections') return;
     try {
       const j = await r.json();
-      if (op === 'PdpAvailabilityCalendar') months = months || findKey(j, 'calendarMonths')[0] || null;
+      if (calendarOp) months = months || findKey(j, 'calendarMonths')[0] || null;
       else { sawSections = true; if (total == null) total = airbnbStayPrice(j, nights); }
     } catch { /* not JSON */ }
   });
@@ -331,6 +337,13 @@ async function openAirbnb(page, task) {
     }
   }
   const calendar = airbnbCalendar(months);
+  // The page made its calls but no calendar came back: the call was renamed
+  // (as in October 2026), reshaped, or slow. Said once a run, with the calls seen.
+  if (!calendar && sawSections && !calendarWarned) {
+    calendarWarned = true;
+    const seen = [...ops].some((o) => /^PdpAvailabilityCalendar/.test(o));
+    note('warning', 'Airbnb calendar not found', `${task.label}: ${seen ? 'the calendar call came back without a calendar (reshaped or slow?)' : 'no calendar call seen (renamed?)'}; the page's calls were ${[...ops].join(', ')}`);
+  }
   if (!calendar && total == null) {
     await saveDebug(page, task.label, 'empty');
     return { outcome: 'empty', rooms: [] };

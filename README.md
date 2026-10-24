@@ -64,7 +64,8 @@ makes the page ask Airbnb for two things, which `openAirbnb()` keeps from the
 page's own network calls (the same data in the page's script tags is the
 fallback):
 
-- `PdpAvailabilityCalendar`: a year of nights, free or not, with the minimum
+- `PdpAvailabilityCalendar` (since October 2026 `PdpAvailabilityCalendarV2Query`;
+  matched by prefix): a year of nights, free or not, with the minimum
   stay. Sent back as `{start, states}`, one letter per night (F free, G not).
 - `StaysPdpSections`: the booking box, e.g. "$385 for 2 nights" and
   "2 nights x $192.30" (fees included). No price for the stay means its dates
